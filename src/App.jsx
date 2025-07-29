@@ -6,19 +6,22 @@ import { Label } from '@/components/ui/label.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
-import { Users, TrendingUp, DollarSign, MessageSquare, Database, Settings, Plus, Search, Filter, Download, Upload } from 'lucide-react'
+import { Users, TrendingUp, DollarSign, MessageSquare, Database, Settings, Plus, Search, Filter, Download, Upload, RefreshCw } from 'lucide-react'
 import './App.css'
 
-// Configuración de Google Sheets
-const GOOGLE_SHEETS_ID = '1kgAlVkdtgofYTYyqKycGwtmnYuiMU-41_geAcKIp8mE'
-const GOOGLE_SHEETS_API_KEY = 'TU_API_KEY_AQUI' // Julio necesitará configurar esto
+// Configuración de Google Sheets desde variables de entorno
+const GOOGLE_SHEETS_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID || '1kgAlVkdtgofYTYyqKycGwtmnYuiMU-41_geAcKIp8mE'
+const GOOGLE_SHEETS_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [leads, setLeads] = useState([])
+  const [ventas, setVentas] = useState([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [connected, setConnected] = useState(false)
+  const [error, setError] = useState('')
   const [newLead, setNewLead] = useState({
     nombre: '',
     telefono: '',
@@ -31,108 +34,135 @@ function App() {
     notas: ''
   })
 
-  // Datos de ejemplo para demostración
-  const sampleLeads = [
-    {
-      id: 'lead_001',
-      nombre: 'Juan Pérez',
-      telefono: '987654321',
-      email: 'juan@email.com',
-      fuente: 'TikTok',
-      tienda: 'EJERCITO',
-      estado: 'Nuevo',
-      vendedor_nombre: 'Gema Rodriguez',
-      producto_interes: 'Laptop Gaming',
-      valor_estimado: 3500,
-      probabilidad: 10,
-      fecha_ultima_interaccion: '2025-01-29',
-      proxima_accion: 'Contactar por WhatsApp',
-      notas: 'Lead interesado en gaming'
-    },
-    {
-      id: 'lead_002',
-      nombre: 'María García',
-      telefono: '987654322',
-      email: 'maria@email.com',
-      fuente: 'Facebook',
-      tienda: 'LEON',
-      estado: 'Contactado',
-      vendedor_nombre: 'Josue Martinez',
-      producto_interes: 'Laptop Oficina',
-      valor_estimado: 2800,
-      probabilidad: 25,
-      fecha_ultima_interaccion: '2025-01-28',
-      proxima_accion: 'Enviar cotización',
-      notas: 'Necesita laptop para trabajo remoto'
-    },
-    {
-      id: 'lead_003',
-      nombre: 'Carlos López',
-      telefono: '987654323',
-      email: 'carlos@email.com',
-      fuente: 'Tienda',
-      tienda: 'EJERCITO',
-      estado: 'Interesado',
-      vendedor_nombre: 'Kevin Salazar',
-      producto_interes: 'Laptop Gaming',
-      valor_estimado: 4200,
-      probabilidad: 50,
-      fecha_ultima_interaccion: '2025-01-27',
-      proxima_accion: 'Demostración en tienda',
-      notas: 'Visitó tienda, muy interesado'
+  // Función para cargar datos desde Google Sheets
+  const loadDataFromSheets = async () => {
+    if (!GOOGLE_SHEETS_API_KEY) {
+      setError('API Key no configurada en variables de entorno')
+      return false
     }
-  ]
 
-  const sampleVentas = [
-    {
-      id: 'venta_001',
-      lead_nombre: 'Ana Rodríguez',
-      monto_total: 3500,
-      monto_adelanto: 1000,
-      monto_pendiente: 2500,
-      estado_pago: 'Pendiente',
-      fecha_vencimiento: '2025-02-28',
-      vendedor: 'Gema Rodriguez'
-    },
-    {
-      id: 'venta_002',
-      lead_nombre: 'Pedro Martínez',
-      monto_total: 2800,
-      monto_adelanto: 2800,
-      monto_pendiente: 0,
-      estado_pago: 'Pagado',
-      fecha_vencimiento: '2025-02-15',
-      vendedor: 'Josue Martinez'
-    }
-  ]
-
-  useEffect(() => {
-    // Cargar datos de ejemplo al iniciar
-    setLeads(sampleLeads)
-  }, [])
-
-  // Función para conectar con Google Sheets (simulada)
-  const connectToGoogleSheets = async () => {
-    setLoading(true)
     try {
-      // Aquí iría la conexión real con Google Sheets API
-      console.log('Conectando con Google Sheets:', GOOGLE_SHEETS_ID)
+      setError('')
+      console.log('Intentando conectar con Google Sheets...')
+      console.log('Sheets ID:', GOOGLE_SHEETS_ID)
+      console.log('API Key configurada:', !!GOOGLE_SHEETS_API_KEY)
+
+      // Cargar leads desde la hoja LEADS_MASTER (hoja 0)
+      const leadsResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/LEADS_MASTER!A2:U1000?key=${GOOGLE_SHEETS_API_KEY}`
+      )
       
-      // Simulación de carga de datos
-      setTimeout(() => {
-        setLeads(sampleLeads)
-        setLoading(false)
-        alert('¡Conectado exitosamente con Google Sheets!')
-      }, 2000)
+      console.log('Response status:', leadsResponse.status)
+      
+      if (!leadsResponse.ok) {
+        const errorData = await leadsResponse.json()
+        console.error('Error response:', errorData)
+        throw new Error(`Error HTTP ${leadsResponse.status}: ${errorData.error?.message || 'Error desconocido'}`)
+      }
+      
+      const leadsData = await leadsResponse.json()
+      console.log('Datos recibidos:', leadsData)
+      
+      const leadsRows = leadsData.values || []
+      console.log('Filas de leads:', leadsRows.length)
+      
+      const formattedLeads = leadsRows
+        .filter(row => row[0] && row[2]) // Filtrar filas con ID y nombre
+        .map((row, index) => {
+          console.log(`Procesando fila ${index}:`, row)
+          return {
+            id: row[0] || `lead_${index}`,
+            timestamp: row[1] || '',
+            nombre: row[2] || '',
+            telefono: row[3] || '',
+            email: row[4] || '',
+            fuente: row[5] || '',
+            tienda: row[6] || '',
+            estado: row[7] || 'Nuevo',
+            vendedor_id: row[8] || '',
+            vendedor_nombre: row[9] || '',
+            producto_interes: row[10] || '',
+            valor_estimado: parseFloat(row[11]) || 0,
+            probabilidad: parseFloat(row[12]) || 0,
+            activo: row[13] === 'VERDADERO' || row[13] === 'TRUE',
+            fecha_ultima_interaccion: row[14] || '',
+            proxima_accion: row[15] || '',
+            fecha_proxima_accion: row[16] || '',
+            notas: row[17] || '',
+            created_by: row[18] || '',
+            updated_by: row[19] || '',
+            updated_at: row[20] || ''
+          }
+        })
+      
+      console.log('Leads formateados:', formattedLeads)
+      
+      // Intentar cargar ventas/cobranzas (opcional)
+      try {
+        const ventasResponse = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/PAGOS!A2:K1000?key=${GOOGLE_SHEETS_API_KEY}`
+        )
+        
+        if (ventasResponse.ok) {
+          const ventasData = await ventasResponse.json()
+          const ventasRows = ventasData.values || []
+          
+          const formattedVentas = ventasRows
+            .filter(row => row[0] && row[1]) // Filtrar filas con datos
+            .map((row, index) => ({
+              id: row[0] || `venta_${index}`,
+              lead_id: row[1] || '',
+              lead_nombre: row[2] || '',
+              monto_total: parseFloat(row[3]) || 0,
+              monto_adelanto: parseFloat(row[4]) || 0,
+              monto_pendiente: parseFloat(row[5]) || 0,
+              estado_pago: row[6] || 'Pendiente',
+              fecha_venta: row[7] || '',
+              fecha_vencimiento: row[8] || '',
+              vendedor: row[9] || '',
+              notas_pago: row[10] || ''
+            }))
+          
+          setVentas(formattedVentas)
+          console.log('Ventas cargadas:', formattedVentas.length)
+        }
+      } catch (ventasError) {
+        console.warn('No se pudieron cargar las ventas:', ventasError)
+      }
+      
+      setLeads(formattedLeads)
+      setConnected(true)
+      return true
     } catch (error) {
-      console.error('Error conectando con Google Sheets:', error)
-      setLoading(false)
-      alert('Error conectando con Google Sheets. Verifica la configuración.')
+      console.error('Error cargando datos:', error)
+      setError(`Error: ${error.message}`)
+      setConnected(false)
+      return false
     }
   }
 
-  // Función para agregar nuevo lead
-  const handleAddLead = () => {
+  // Función para conectar con Google Sheets
+  const connectToGoogleSheets = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const success = await loadDataFromSheets()
+      if (success) {
+        alert(`¡Conectado exitosamente! Se cargaron ${leads.length} leads desde Google Sheets.`)
+      } else {
+        alert('Error conectando con Google Sheets. Revisa la consola para más detalles.')
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      setError(`Error de conexión: ${error.message}`)
+      alert('Error conectando con Google Sheets.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Función para agregar nuevo lead (simulada - en producción escribiría a Sheets)
+  const handleAddLead = async () => {
     if (!newLead.nombre || !newLead.telefono) {
       alert('Nombre y teléfono son obligatorios')
       return
@@ -141,13 +171,20 @@ function App() {
     const lead = {
       ...newLead,
       id: `lead_${Date.now()}`,
+      timestamp: new Date().toISOString(),
       vendedor_nombre: newLead.tienda === 'EJERCITO' ? 'Gema Rodriguez' : 'Josue Martinez',
+      vendedor_id: newLead.tienda === 'EJERCITO' ? 'gema_vendedor_2025' : 'josue_vendedor_2025',
       probabilidad: 10,
+      activo: true,
       fecha_ultima_interaccion: new Date().toISOString().split('T')[0],
-      proxima_accion: 'Contactar por WhatsApp'
+      proxima_accion: 'Contactar por WhatsApp',
+      created_by: 'CRM_Web',
+      updated_by: 'CRM_Web',
+      updated_at: new Date().toISOString()
     }
 
-    setLeads([...leads, lead])
+    // En producción, aquí harías un POST a Google Sheets API o Apps Script
+    setLeads([lead, ...leads])
     setNewLead({
       nombre: '',
       telefono: '',
@@ -159,24 +196,46 @@ function App() {
       valor_estimado: '',
       notas: ''
     })
-    alert('Lead agregado exitosamente!')
+    alert('Lead agregado exitosamente! (En producción se guardará en Google Sheets)')
   }
+
+  // Cargar datos al iniciar la aplicación
+  useEffect(() => {
+    if (GOOGLE_SHEETS_API_KEY) {
+      loadDataFromSheets()
+    } else {
+      setError('Variables de entorno no configuradas. Configurar VITE_GOOGLE_API_KEY en Vercel.')
+    }
+  }, [])
 
   // Filtrar leads
   const filteredLeads = leads.filter(lead => {
     const matchesSearch = lead.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          lead.telefono.includes(searchTerm) ||
-                         lead.email.toLowerCase().includes(searchTerm.toLowerCase())
+                         (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesFilter = filterStatus === 'all' || lead.estado === filterStatus
-    return matchesSearch && matchesFilter
+    return matchesSearch && matchesFilter && lead.activo
   })
 
   // Calcular métricas
-  const totalLeads = leads.length
-  const leadsNuevos = leads.filter(l => l.estado === 'Nuevo').length
-  const leadsInteresados = leads.filter(l => l.estado === 'Interesado').length
-  const valorEstimadoTotal = leads.reduce((sum, lead) => sum + (parseFloat(lead.valor_estimado) || 0), 0)
-  const cobranzasPendientes = sampleVentas.reduce((sum, venta) => sum + venta.monto_pendiente, 0)
+  const totalLeads = leads.filter(l => l.activo).length
+  const leadsNuevos = leads.filter(l => l.estado === 'Nuevo' && l.activo).length
+  const leadsContactados = leads.filter(l => l.estado === 'Contactado' && l.activo).length
+  const leadsInteresados = leads.filter(l => l.estado === 'Interesado' && l.activo).length
+  const leadsNegociacion = leads.filter(l => l.estado === 'Negociación' && l.activo).length
+  const valorEstimadoTotal = leads
+    .filter(l => l.activo)
+    .reduce((sum, lead) => sum + (parseFloat(lead.valor_estimado) || 0), 0)
+  const cobranzasPendientes = ventas
+    .filter(v => v.estado_pago === 'Pendiente')
+    .reduce((sum, venta) => sum + venta.monto_pendiente, 0)
+
+  // Distribución por tienda
+  const leadsPorTienda = leads.filter(l => l.activo).reduce((acc, lead) => {
+    const tienda = lead.tienda || 'Sin asignar'
+    acc[tienda] = (acc[tienda] || 0) + 1
+    return acc
+  }, {})
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -186,9 +245,17 @@ function App() {
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
               <h1 className="text-2xl font-bold text-gray-900">PETULAP CRM</h1>
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                Conectado a Google Sheets
+              <Badge 
+                variant="outline" 
+                className={connected ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}
+              >
+                {connected ? 'Conectado a Google Sheets' : 'Desconectado'}
               </Badge>
+              {error && (
+                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                  Error: {error}
+                </Badge>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               <Button 
@@ -197,7 +264,17 @@ function App() {
                 variant="outline"
                 size="sm"
               >
-                {loading ? 'Sincronizando...' : 'Sincronizar'}
+                {loading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Sincronizar
+                  </>
+                )}
               </Button>
               <Button onClick={() => setActiveTab('settings')} variant="ghost" size="sm">
                 <Settings className="h-4 w-4" />
@@ -211,29 +288,14 @@ function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="dashboard" className="flex items-center space-x-2">
-              <TrendingUp className="h-4 w-4" />
-              <span>Dashboard</span>
-            </TabsTrigger>
-            <TabsTrigger value="leads" className="flex items-center space-x-2">
-              <Users className="h-4 w-4" />
-              <span>Leads</span>
-            </TabsTrigger>
-            <TabsTrigger value="cobranzas" className="flex items-center space-x-2">
-              <DollarSign className="h-4 w-4" />
-              <span>Cobranzas</span>
-            </TabsTrigger>
-            <TabsTrigger value="mensajeria" className="flex items-center space-x-2">
-              <MessageSquare className="h-4 w-4" />
-              <span>Mensajería</span>
-            </TabsTrigger>
-            <TabsTrigger value="repositorio" className="flex items-center space-x-2">
-              <Database className="h-4 w-4" />
-              <span>Repositorio</span>
-            </TabsTrigger>
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger value="leads">Leads</TabsTrigger>
+            <TabsTrigger value="cobranzas">Cobranzas</TabsTrigger>
+            <TabsTrigger value="mensajeria">Mensajería</TabsTrigger>
+            <TabsTrigger value="repositorio">Repositorio</TabsTrigger>
           </TabsList>
 
-          {/* Dashboard */}
+          {/* Dashboard Tab */}
           <TabsContent value="dashboard" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card>
@@ -242,7 +304,7 @@ function App() {
                   <Users className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{totalLeads.toLocaleString()}</div>
+                  <div className="text-2xl font-bold">{totalLeads}</div>
                   <p className="text-xs text-muted-foreground">Base de datos activa</p>
                 </CardContent>
               </Card>
@@ -253,7 +315,7 @@ function App() {
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-blue-600">{leadsNuevos}</div>
+                  <div className="text-2xl font-bold">{leadsNuevos}</div>
                   <p className="text-xs text-muted-foreground">Requieren atención</p>
                 </CardContent>
               </Card>
@@ -264,9 +326,7 @@ function App() {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-green-600">
-                    S/ {valorEstimadoTotal.toLocaleString()}
-                  </div>
+                  <div className="text-2xl font-bold">S/ {valorEstimadoTotal.toLocaleString()}</div>
                   <p className="text-xs text-muted-foreground">Pipeline total</p>
                 </CardContent>
               </Card>
@@ -274,12 +334,10 @@ function App() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Por Cobrar</CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-orange-600">
-                    S/ {cobranzasPendientes.toLocaleString()}
-                  </div>
+                  <div className="text-2xl font-bold">S/ {cobranzasPendientes.toLocaleString()}</div>
                   <p className="text-xs text-muted-foreground">Cobranzas pendientes</p>
                 </CardContent>
               </Card>
@@ -290,24 +348,22 @@ function App() {
                 <CardHeader>
                   <CardTitle>Distribución por Estado</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Nuevos</span>
-                      <Badge variant="secondary">{leadsNuevos}</Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Contactados</span>
-                      <Badge variant="secondary">{leads.filter(l => l.estado === 'Contactado').length}</Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Interesados</span>
-                      <Badge variant="secondary">{leadsInteresados}</Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">En Negociación</span>
-                      <Badge variant="secondary">{leads.filter(l => l.estado === 'Negociación').length}</Badge>
-                    </div>
+                <CardContent className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Nuevos</span>
+                    <Badge variant="secondary">{leadsNuevos}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Contactados</span>
+                    <Badge variant="secondary">{leadsContactados}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Interesados</span>
+                    <Badge variant="secondary">{leadsInteresados}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">En Negociación</span>
+                    <Badge variant="secondary">{leadsNegociacion}</Badge>
                   </div>
                 </CardContent>
               </Card>
@@ -316,400 +372,241 @@ function App() {
                 <CardHeader>
                   <CardTitle>Rendimiento por Tienda</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">EJERCITO</span>
-                      <Badge variant="outline">{leads.filter(l => l.tienda === 'EJERCITO').length} leads</Badge>
+                <CardContent className="space-y-4">
+                  {Object.entries(leadsPorTienda).map(([tienda, cantidad]) => (
+                    <div key={tienda} className="flex justify-between items-center">
+                      <span className="text-sm">{tienda}</span>
+                      <Badge variant="outline">{cantidad} leads</Badge>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">LEON</span>
-                      <Badge variant="outline">{leads.filter(l => l.tienda === 'LEON').length} leads</Badge>
-                    </div>
-                  </div>
+                  ))}
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Gestión de Leads */}
+          {/* Leads Tab */}
           <TabsContent value="leads" className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+            <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold">Gestión de Leads</h2>
-              <div className="flex space-x-2">
-                <Button onClick={() => setActiveTab('nuevo-lead')} className="flex items-center space-x-2">
-                  <Plus className="h-4 w-4" />
-                  <span>Nuevo Lead</span>
-                </Button>
-                <Button variant="outline" className="flex items-center space-x-2">
-                  <Download className="h-4 w-4" />
-                  <span>Exportar</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Filtros */}
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-                  <div className="flex-1">
-                    <Label htmlFor="search">Buscar</Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="search"
-                        placeholder="Buscar por nombre, teléfono o email..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-                  <div className="w-full sm:w-48">
-                    <Label htmlFor="filter">Filtrar por Estado</Label>
-                    <Select value={filterStatus} onValueChange={setFilterStatus}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todos los estados" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="Nuevo">Nuevo</SelectItem>
-                        <SelectItem value="Contactado">Contactado</SelectItem>
-                        <SelectItem value="Interesado">Interesado</SelectItem>
-                        <SelectItem value="Negociación">Negociación</SelectItem>
-                        <SelectItem value="Venta">Venta</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Lista de Leads */}
-            <div className="grid gap-4">
-              {filteredLeads.map((lead) => (
-                <Card key={lead.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="pt-6">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between space-y-4 lg:space-y-0">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center space-x-4">
-                          <h3 className="font-semibold text-lg">{lead.nombre}</h3>
-                          <Badge 
-                            variant={lead.estado === 'Nuevo' ? 'default' : 
-                                   lead.estado === 'Interesado' ? 'secondary' : 'outline'}
-                          >
-                            {lead.estado}
-                          </Badge>
-                          <Badge variant="outline">{lead.tienda}</Badge>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm text-muted-foreground">
-                          <span>📱 {lead.telefono}</span>
-                          <span>📧 {lead.email}</span>
-                          <span>📍 {lead.fuente}</span>
-                          <span>👤 {lead.vendedor_nombre}</span>
-                        </div>
-                        <div className="text-sm">
-                          <span className="font-medium">Producto:</span> {lead.producto_interes} | 
-                          <span className="font-medium"> Valor:</span> S/ {lead.valor_estimado} | 
-                          <span className="font-medium"> Probabilidad:</span> {lead.probabilidad}%
-                        </div>
-                        {lead.notas && (
-                          <p className="text-sm text-muted-foreground italic">{lead.notas}</p>
-                        )}
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm">Editar</Button>
-                        <Button variant="outline" size="sm">Contactar</Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {filteredLeads.length === 0 && (
-              <Card>
-                <CardContent className="pt-6 text-center">
-                  <p className="text-muted-foreground">No se encontraron leads con los filtros aplicados.</p>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          {/* Cobranzas */}
-          <TabsContent value="cobranzas" className="space-y-6">
-            <h2 className="text-2xl font-bold">Gestión de Cobranzas</h2>
-            
-            <div className="grid gap-4">
-              {sampleVentas.map((venta) => (
-                <Card key={venta.id} className={venta.estado_pago === 'Pendiente' ? 'border-orange-200 bg-orange-50' : ''}>
-                  <CardContent className="pt-6">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between space-y-4 lg:space-y-0">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center space-x-4">
-                          <h3 className="font-semibold text-lg">{venta.lead_nombre}</h3>
-                          <Badge 
-                            variant={venta.estado_pago === 'Pendiente' ? 'destructive' : 'default'}
-                          >
-                            {venta.estado_pago}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-                          <span><strong>Total:</strong> S/ {venta.monto_total.toLocaleString()}</span>
-                          <span><strong>Adelanto:</strong> S/ {venta.monto_adelanto.toLocaleString()}</span>
-                          <span><strong>Pendiente:</strong> S/ {venta.monto_pendiente.toLocaleString()}</span>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          <span><strong>Vendedor:</strong> {venta.vendedor} | </span>
-                          <span><strong>Vencimiento:</strong> {venta.fecha_vencimiento}</span>
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        {venta.estado_pago === 'Pendiente' && (
-                          <>
-                            <Button variant="outline" size="sm">Registrar Pago</Button>
-                            <Button variant="outline" size="sm">Contactar</Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-
-          {/* Mensajería */}
-          <TabsContent value="mensajeria" className="space-y-6">
-            <h2 className="text-2xl font-bold">Centro de Mensajería</h2>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Campañas Programadas</CardTitle>
-                  <CardDescription>Mensajes masivos por WhatsApp</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">Promoción Gaming Enero</h4>
-                        <p className="text-sm text-muted-foreground">AREQUIPA | 500 leads objetivo</p>
-                      </div>
-                      <Badge variant="outline">Programada</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">Ofertas León</h4>
-                        <p className="text-sm text-muted-foreground">LEON | 300 leads objetivo</p>
-                      </div>
-                      <Badge variant="secondary">Enviada</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Plantillas de Mensajes</CardTitle>
-                  <CardDescription>Rotación anti-baneo</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="p-4 border rounded-lg">
-                      <h4 className="font-medium">Plantilla Gaming A</h4>
-                      <p className="text-sm text-muted-foreground">🎮 ¡Laptops gaming con descuento especial!</p>
-                    </div>
-                    <div className="p-4 border rounded-lg">
-                      <h4 className="font-medium">Plantilla Gaming B</h4>
-                      <p className="text-sm text-muted-foreground">💻 Las mejores laptops para gamers están aquí</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Repositorio */}
-          <TabsContent value="repositorio" className="space-y-6">
-            <h2 className="text-2xl font-bold">Repositorio de Datos</h2>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Credenciales de Redes Sociales</CardTitle>
-                  <CardDescription>Accesos seguros encriptados</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">Facebook Marketplace</h4>
-                        <p className="text-sm text-muted-foreground">petulap.oficial@gmail.com</p>
-                      </div>
-                      <Button variant="outline" size="sm">Ver</Button>
-                    </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">TikTok Business</h4>
-                        <p className="text-sm text-muted-foreground">petulap.tiktok@gmail.com</p>
-                      </div>
-                      <Button variant="outline" size="sm">Ver</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Catálogo de Productos</CardTitle>
-                  <CardDescription>Para diseñador y vendedores</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">ASUS ROG Strix G15</h4>
-                        <p className="text-sm text-muted-foreground">S/ 4,500 | Stock: 5</p>
-                      </div>
-                      <Badge variant="outline">Activo</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">HP Pavilion Gaming</h4>
-                        <p className="text-sm text-muted-foreground">S/ 3,200 | Stock: 8</p>
-                      </div>
-                      <Badge variant="outline">Activo</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Nuevo Lead (Modal simulado) */}
-          <TabsContent value="nuevo-lead" className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Agregar Nuevo Lead</h2>
-              <Button variant="outline" onClick={() => setActiveTab('leads')}>
-                Volver a Leads
+              <Button onClick={() => setActiveTab('nuevo-lead')}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo Lead
               </Button>
             </div>
 
-            <Card className="max-w-2xl">
-              <CardHeader>
-                <CardTitle>Información del Lead</CardTitle>
-                <CardDescription>Completa los datos del nuevo prospecto</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="nombre">Nombre Completo *</Label>
-                    <Input
-                      id="nombre"
-                      value={newLead.nombre}
-                      onChange={(e) => setNewLead({...newLead, nombre: e.target.value})}
-                      placeholder="Juan Pérez"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="telefono">Teléfono *</Label>
-                    <Input
-                      id="telefono"
-                      value={newLead.telefono}
-                      onChange={(e) => setNewLead({...newLead, telefono: e.target.value})}
-                      placeholder="987654321"
-                    />
-                  </div>
-                </div>
+            <div className="flex gap-4 items-center">
+              <div className="flex-1">
+                <Input
+                  placeholder="Buscar por nombre, teléfono o email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-sm"
+                />
+              </div>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Filtrar por estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="Nuevo">Nuevo</SelectItem>
+                  <SelectItem value="Contactado">Contactado</SelectItem>
+                  <SelectItem value="Interesado">Interesado</SelectItem>
+                  <SelectItem value="Negociación">Negociación</SelectItem>
+                  <SelectItem value="Venta">Venta</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={newLead.email}
-                    onChange={(e) => setNewLead({...newLead, email: e.target.value})}
-                    placeholder="juan@email.com"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="fuente">Fuente</Label>
-                    <Select value={newLead.fuente} onValueChange={(value) => setNewLead({...newLead, fuente: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar fuente" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="TikTok">TikTok</SelectItem>
-                        <SelectItem value="Facebook">Facebook</SelectItem>
-                        <SelectItem value="Tienda">Tienda</SelectItem>
-                        <SelectItem value="Referido">Referido</SelectItem>
-                        <SelectItem value="Bot">Bot</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="tienda">Tienda</Label>
-                    <Select value={newLead.tienda} onValueChange={(value) => setNewLead({...newLead, tienda: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar tienda" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="EJERCITO">EJERCITO</SelectItem>
-                        <SelectItem value="LEON">LEON</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="producto">Producto de Interés</Label>
-                    <Input
-                      id="producto"
-                      value={newLead.producto_interes}
-                      onChange={(e) => setNewLead({...newLead, producto_interes: e.target.value})}
-                      placeholder="Laptop Gaming"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="valor">Valor Estimado (S/)</Label>
-                    <Input
-                      id="valor"
-                      type="number"
-                      value={newLead.valor_estimado}
-                      onChange={(e) => setNewLead({...newLead, valor_estimado: e.target.value})}
-                      placeholder="3500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="notas">Notas</Label>
-                  <Input
-                    id="notas"
-                    value={newLead.notas}
-                    onChange={(e) => setNewLead({...newLead, notas: e.target.value})}
-                    placeholder="Información adicional del lead..."
-                  />
-                </div>
-
-                <div className="flex space-x-4 pt-4">
-                  <Button onClick={handleAddLead} className="flex-1">
-                    Agregar Lead
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setActiveTab('leads')}
-                    className="flex-1"
-                  >
-                    Cancelar
-                  </Button>
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lead</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contacto</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fuente</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendedor</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {filteredLeads.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
+                            {leads.length === 0 ? 'No hay leads cargados. Haz clic en "Sincronizar" para cargar desde Google Sheets.' : 'No se encontraron leads con los filtros aplicados.'}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredLeads.map((lead) => (
+                          <tr key={lead.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-4">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900">{lead.nombre}</div>
+                                <div className="text-sm text-gray-500">{lead.producto_interes}</div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">{lead.telefono}</div>
+                              <div className="text-sm text-gray-500">{lead.email}</div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <Badge variant="outline">{lead.fuente}</Badge>
+                              <div className="text-xs text-gray-500 mt-1">{lead.tienda}</div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <Badge 
+                                variant={
+                                  lead.estado === 'Nuevo' ? 'default' :
+                                  lead.estado === 'Contactado' ? 'secondary' :
+                                  lead.estado === 'Interesado' ? 'outline' :
+                                  lead.estado === 'Negociación' ? 'destructive' :
+                                  'default'
+                                }
+                              >
+                                {lead.estado}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">{lead.vendedor_nombre}</div>
+                              <div className="text-xs text-gray-500">{lead.probabilidad}% prob.</div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                S/ {lead.valor_estimado.toLocaleString()}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex space-x-2">
+                                <Button size="sm" variant="outline">Ver</Button>
+                                <Button size="sm" variant="outline">Editar</Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Cobranzas Tab */}
+          <TabsContent value="cobranzas" className="space-y-6">
+            <h2 className="text-2xl font-bold">Gestión de Cobranzas</h2>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Cobranzas Pendientes</CardTitle>
+                <CardDescription>
+                  Total por cobrar: S/ {cobranzasPendientes.toLocaleString()}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {ventas.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    No hay datos de cobranzas. Verifica que la hoja "PAGOS" exista en tu Google Sheets.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {ventas.filter(v => v.estado_pago === 'Pendiente').map((venta) => (
+                      <div key={venta.id} className="flex justify-between items-center p-4 border rounded-lg">
+                        <div>
+                          <div className="font-medium">{venta.lead_nombre}</div>
+                          <div className="text-sm text-gray-500">
+                            Vencimiento: {venta.fecha_vencimiento}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-red-600">
+                            S/ {venta.monto_pendiente.toLocaleString()}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            de S/ {venta.monto_total.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Mensajería Tab */}
+          <TabsContent value="mensajeria" className="space-y-6">
+            <h2 className="text-2xl font-bold">Centro de Mensajería Masiva</h2>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Campañas Programadas</CardTitle>
+                <CardDescription>
+                  Gestiona tus mensajes masivos y evita el baneo con rotación automática
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-center text-gray-500 py-8">
+                  Funcionalidad en desarrollo. Próximamente podrás programar mensajes masivos.
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Repositorio Tab */}
+          <TabsContent value="repositorio" className="space-y-6">
+            <h2 className="text-2xl font-bold">Repositorio de Datos</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Configuración del Sistema</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span>Google Sheets ID</span>
+                    <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                      {GOOGLE_SHEETS_ID.substring(0, 12)}...
+                    </code>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>API Key</span>
+                    <Badge variant={GOOGLE_SHEETS_API_KEY ? 'default' : 'destructive'}>
+                      {GOOGLE_SHEETS_API_KEY ? 'Configurada' : 'No configurada'}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Estado de conexión</span>
+                    <Badge variant={connected ? 'default' : 'destructive'}>
+                      {connected ? 'Conectado' : 'Desconectado'}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Estadísticas de Datos</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span>Total de leads</span>
+                    <Badge variant="outline">{leads.length}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Leads activos</span>
+                    <Badge variant="outline">{totalLeads}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Cobranzas</span>
+                    <Badge variant="outline">{ventas.length}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
@@ -722,8 +619,11 @@ function App() {
               © 2025 PETULAP CRM - Sistema de Gestión de Leads
             </div>
             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-              <span>Conectado a Google Sheets</span>
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+              <span>{connected ? 'Conectado' : 'Desconectado'}</span>
+              <Badge 
+                variant="outline" 
+                className={connected ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}
+              >
                 ID: {GOOGLE_SHEETS_ID.substring(0, 8)}...
               </Badge>
             </div>
