@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -14,7 +13,8 @@ import {
   Users, TrendingUp, DollarSign, MessageSquare, Database, Settings, 
   Plus, Search, Filter, Download, Upload, RefreshCw, Phone, Mail,
   Calendar, Clock, AlertTriangle, CheckCircle, XCircle, Target,
-  BarChart3, PieChart, TrendingDown, CreditCard, Receipt
+  BarChart3, PieChart, TrendingDown, CreditCard, Receipt, ArrowRight,
+  ArrowLeft, Edit, Trash2, Eye, FileText, Calculator
 } from 'lucide-react'
 import './App.css'
 
@@ -22,7 +22,7 @@ import './App.css'
 const GOOGLE_SHEETS_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID || '1kgAlVkdtgofYTYyqKycGwtmnYuiMU-41_geAcKIp8mE'
 const GOOGLE_SHEETS_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
 
-// Configuración del pipeline Kanban
+// Configuración del pipeline
 const PIPELINE_STAGES = [
   { id: 'prospeccion', title: 'Prospección', color: 'bg-blue-100 border-blue-300', textColor: 'text-blue-800' },
   { id: 'contacto', title: 'Contacto', color: 'bg-yellow-100 border-yellow-300', textColor: 'text-yellow-800' },
@@ -43,12 +43,14 @@ function App() {
   // Estados para formularios
   const [showNewLeadForm, setShowNewLeadForm] = useState(false)
   const [showVentaForm, setShowVentaForm] = useState(false)
+  const [showEditLeadForm, setShowEditLeadForm] = useState(false)
   const [selectedLead, setSelectedLead] = useState(null)
   
   // Estados para filtros
   const [searchTerm, setSearchTerm] = useState('')
   const [filterVendedor, setFilterVendedor] = useState('all')
   const [filterFuente, setFilterFuente] = useState('all')
+  const [filterEstado, setFilterEstado] = useState('Activo')
 
   // Formulario nuevo lead
   const [newLead, setNewLead] = useState({
@@ -56,9 +58,28 @@ function App() {
     telefono: '',
     email: '',
     fuente: '',
+    tienda: '',
     producto_interes: '',
     valor_estimado: '',
     comentarios: ''
+  })
+
+  // Formulario editar lead
+  const [editLead, setEditLead] = useState({
+    id: '',
+    nombre: '',
+    telefono: '',
+    email: '',
+    fuente: '',
+    tienda: '',
+    estado_lead: '',
+    pipeline_etapa: '',
+    producto_interes: '',
+    valor_estimado: '',
+    vendedor_asignado: '',
+    comentarios: '',
+    proxima_accion: '',
+    fecha_proxima_accion: ''
   })
 
   // Formulario venta
@@ -83,7 +104,7 @@ function App() {
       setError('')
       setLoading(true)
 
-      // Cargar leads
+      // Cargar leads desde LEADS_MASTER
       const leadsResponse = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/LEADS_MASTER!A2:Q1000?key=${GOOGLE_SHEETS_API_KEY}`
       )
@@ -104,17 +125,20 @@ function App() {
           telefono: row[3] || '',
           email: row[4] || '',
           fuente: row[5] || '',
-          estado_lead: row[6] || 'Activo',
-          pipeline_etapa: row[7] || 'Prospección',
-          producto_interes: row[8] || '',
-          valor_estimado: parseFloat(row[9]) || 0,
-          vendedor_asignado: row[10] || '',
-          comentarios: row[11] || '',
-          fecha_ultimo_contacto: row[12] || '',
-          proxima_accion: row[13] || '',
-          fecha_proxima_accion: row[14] || '',
-          created_by: row[15] || '',
-          updated_at: row[16] || ''
+          tienda: row[6] || '',
+          estado_lead: row[7] || 'Activo',
+          pipeline_etapa: row[8] || 'Prospección',
+          vendedor_id: row[9] || '',
+          vendedor_nombre: row[10] || '',
+          producto_interes: row[11] || '',
+          valor_estimado: parseFloat(row[12]) || 0,
+          probabilidad: parseInt(row[13]) || 10,
+          comentarios: row[14] || '',
+          fecha_ultimo_contacto: row[15] || '',
+          proxima_accion: row[16] || '',
+          fecha_proxima_accion: row[17] || '',
+          created_by: row[18] || '',
+          updated_at: row[19] || ''
         }))
 
       // Cargar ventas
@@ -186,6 +210,7 @@ function App() {
       
       setLeads(formattedLeads)
       setConnected(true)
+      console.log(`Cargados ${formattedLeads.length} leads exitosamente`)
       return true
     } catch (error) {
       console.error('Error cargando datos:', error)
@@ -197,28 +222,23 @@ function App() {
     }
   }, [])
 
-  // Función para mover leads en el Kanban
-  const onDragEnd = (result) => {
-    if (!result.destination) return
-
-    const { source, destination, draggableId } = result
-    
-    if (source.droppableId === destination.droppableId) return
-
-    const newStage = destination.droppableId
-    const leadId = draggableId
-
-    // Actualizar estado local
+  // Función para mover leads en el pipeline
+  const moveLeadToStage = (leadId, newStage) => {
     setLeads(prevLeads => 
       prevLeads.map(lead => 
         lead.id === leadId 
-          ? { ...lead, pipeline_etapa: newStage }
+          ? { 
+              ...lead, 
+              pipeline_etapa: newStage,
+              probabilidad: getProbabilityByStage(newStage),
+              updated_at: new Date().toISOString()
+            }
           : lead
       )
     )
 
     // Si se mueve a "Cierre", abrir formulario de venta
-    if (newStage === 'cierre') {
+    if (newStage === 'Cierre') {
       const lead = leads.find(l => l.id === leadId)
       if (lead) {
         setSelectedLead(lead)
@@ -226,8 +246,33 @@ function App() {
       }
     }
 
-    // Aquí iría la actualización a Google Sheets
     console.log(`Lead ${leadId} movido a ${newStage}`)
+  }
+
+  // Función para cambiar estado del lead
+  const toggleLeadStatus = (leadId) => {
+    setLeads(prevLeads => 
+      prevLeads.map(lead => 
+        lead.id === leadId 
+          ? { 
+              ...lead, 
+              estado_lead: lead.estado_lead === 'Activo' ? 'Inactivo' : 'Activo',
+              updated_at: new Date().toISOString()
+            }
+          : lead
+      )
+    )
+  }
+
+  // Función para obtener probabilidad por etapa
+  const getProbabilityByStage = (stage) => {
+    const probabilities = {
+      'Prospección': 10,
+      'Contacto': 25,
+      'Negociación': 50,
+      'Cierre': 75
+    }
+    return probabilities[stage] || 10
   }
 
   // Función para agregar nuevo lead
@@ -244,11 +289,14 @@ function App() {
       telefono: newLead.telefono,
       email: newLead.email,
       fuente: newLead.fuente,
+      tienda: newLead.tienda,
       estado_lead: 'Activo',
       pipeline_etapa: 'Prospección',
+      vendedor_id: getVendedorIdByFuente(newLead.fuente),
+      vendedor_nombre: getVendedorByFuente(newLead.fuente),
       producto_interes: newLead.producto_interes,
       valor_estimado: parseFloat(newLead.valor_estimado) || 0,
-      vendedor_asignado: getVendedorByFuente(newLead.fuente),
+      probabilidad: 10,
       comentarios: newLead.comentarios,
       fecha_ultimo_contacto: new Date().toISOString().split('T')[0],
       proxima_accion: 'Contactar por WhatsApp',
@@ -263,12 +311,53 @@ function App() {
       telefono: '',
       email: '',
       fuente: '',
+      tienda: '',
       producto_interes: '',
       valor_estimado: '',
       comentarios: ''
     })
     setShowNewLeadForm(false)
     alert('Lead agregado exitosamente!')
+  }
+
+  // Función para editar lead
+  const handleEditLead = () => {
+    setLeads(prevLeads => 
+      prevLeads.map(lead => 
+        lead.id === editLead.id 
+          ? { 
+              ...lead,
+              ...editLead,
+              valor_estimado: parseFloat(editLead.valor_estimado) || 0,
+              updated_at: new Date().toISOString()
+            }
+          : lead
+      )
+    )
+    setShowEditLeadForm(false)
+    setEditLead({})
+    alert('Lead actualizado exitosamente!')
+  }
+
+  // Función para abrir formulario de edición
+  const openEditForm = (lead) => {
+    setEditLead({
+      id: lead.id,
+      nombre: lead.nombre,
+      telefono: lead.telefono,
+      email: lead.email || '',
+      fuente: lead.fuente,
+      tienda: lead.tienda || '',
+      estado_lead: lead.estado_lead,
+      pipeline_etapa: lead.pipeline_etapa,
+      producto_interes: lead.producto_interes || '',
+      valor_estimado: lead.valor_estimado.toString(),
+      vendedor_asignado: lead.vendedor_nombre,
+      comentarios: lead.comentarios || '',
+      proxima_accion: lead.proxima_accion || '',
+      fecha_proxima_accion: lead.fecha_proxima_accion || ''
+    })
+    setShowEditLeadForm(true)
   }
 
   // Función para registrar venta
@@ -294,12 +383,27 @@ function App() {
       fecha_vencimiento: ventaForm.tipo_pago === 'Crédito' 
         ? new Date(Date.now() + parseInt(ventaForm.plazo_credito || 0) * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         : '',
-      vendedor: selectedLead.vendedor_asignado,
+      vendedor: selectedLead.vendedor_nombre,
       fecha_venta: new Date().toISOString().split('T')[0],
       notas_venta: ventaForm.notas_venta
     }
 
     setVentas([venta, ...ventas])
+
+    // Actualizar lead a "vendido"
+    setLeads(prevLeads => 
+      prevLeads.map(lead => 
+        lead.id === selectedLead.id 
+          ? { 
+              ...lead, 
+              pipeline_etapa: 'Cierre',
+              probabilidad: 100,
+              estado_lead: 'Vendido',
+              updated_at: new Date().toISOString()
+            }
+          : lead
+      )
+    )
 
     // Si es crédito, crear registro de cobranza
     if (ventaForm.tipo_pago === 'Crédito' && venta.saldo_pendiente > 0) {
@@ -313,7 +417,7 @@ function App() {
         estado_cobranza: 'Al día',
         fecha_ultimo_pago: '',
         monto_ultimo_pago: 0,
-        vendedor_responsable: selectedLead.vendedor_asignado,
+        vendedor_responsable: selectedLead.vendedor_nombre,
         notas_cobranza: 'Crédito generado automáticamente'
       }
       setCobranzas([cobranza, ...cobranzas])
@@ -337,13 +441,27 @@ function App() {
   // Función auxiliar para asignar vendedor por fuente
   const getVendedorByFuente = (fuente) => {
     const asignaciones = {
-      'TikTok': 'Gema Rodriguez',
-      'Bot': 'Josue Martinez',
-      'Referido': 'Kevin Lopez',
-      'Tienda Leon': 'Andre Silva',
-      'Tienda Ejercito': 'Gema Rodriguez'
+      'Facebook': 'Gema Rodriguez',
+      'TIKTOK': 'Josue Martinez', 
+      'Tienda': 'Kevin Lopez',
+      'Referido': 'Andre Silva',
+      'BOT': 'Gema Rodriguez',
+      'WHATSAPP META': 'Josue Martinez'
     }
     return asignaciones[fuente] || 'Sin asignar'
+  }
+
+  // Función auxiliar para asignar ID de vendedor
+  const getVendedorIdByFuente = (fuente) => {
+    const asignaciones = {
+      'Facebook': 'gema_vendedor_2025',
+      'TIKTOK': 'josue_vendedor_2025', 
+      'Tienda': 'kevin_vendedor_2025',
+      'Referido': 'andre_vendedor_2025',
+      'BOT': 'gema_vendedor_2025',
+      'WHATSAPP META': 'josue_vendedor_2025'
+    }
+    return asignaciones[fuente] || 'sin_asignar'
   }
 
   // Cargar datos al iniciar
@@ -358,9 +476,10 @@ function App() {
     const matchesSearch = lead.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          lead.telefono.includes(searchTerm) ||
                          (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesVendedor = filterVendedor === 'all' || lead.vendedor_asignado === filterVendedor
+    const matchesVendedor = filterVendedor === 'all' || lead.vendedor_nombre === filterVendedor
     const matchesFuente = filterFuente === 'all' || lead.fuente === filterFuente
-    return matchesSearch && matchesVendedor && matchesFuente && lead.estado_lead === 'Activo'
+    const matchesEstado = filterEstado === 'all' || lead.estado_lead === filterEstado
+    return matchesSearch && matchesVendedor && matchesFuente && matchesEstado
   })
 
   // Agrupar leads por etapa para Kanban
@@ -393,13 +512,13 @@ function App() {
             <div className="flex items-center space-x-4">
               <h1 className="text-2xl font-bold text-gray-900">PETULAP CRM</h1>
               <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                Sistema Avanzado
+                Sistema Profesional
               </Badge>
               <Badge 
                 variant="outline" 
                 className={connected ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}
               >
-                {connected ? 'Conectado' : 'Desconectado'}
+                {connected ? `Conectado (${leads.length} leads)` : 'Desconectado'}
               </Badge>
             </div>
             <div className="flex items-center space-x-4">
@@ -426,13 +545,28 @@ function App() {
         </div>
       </header>
 
+      {/* Error Display */}
+      {error && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="bg-red-50 border border-red-200 rounded-md p-4">
+            <div className="flex">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">Error de conexión</h3>
+                <div className="mt-2 text-sm text-red-700">{error}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="kanban">Pipeline Kanban</TabsTrigger>
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="leads">Leads</TabsTrigger>
+            <TabsTrigger value="leads">Gestión Leads</TabsTrigger>
             <TabsTrigger value="ventas">Ventas</TabsTrigger>
             <TabsTrigger value="cobranzas">Cobranzas</TabsTrigger>
             <TabsTrigger value="reportes">Reportes</TabsTrigger>
@@ -492,11 +626,24 @@ function App() {
                           <SelectValue placeholder="Seleccionar fuente" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="TikTok">TikTok</SelectItem>
-                          <SelectItem value="Bot">Bot</SelectItem>
+                          <SelectItem value="Facebook">Facebook</SelectItem>
+                          <SelectItem value="TIKTOK">TIKTOK</SelectItem>
+                          <SelectItem value="Tienda">Tienda</SelectItem>
                           <SelectItem value="Referido">Referido</SelectItem>
-                          <SelectItem value="Tienda Leon">Tienda Leon</SelectItem>
-                          <SelectItem value="Tienda Ejercito">Tienda Ejercito</SelectItem>
+                          <SelectItem value="BOT">BOT</SelectItem>
+                          <SelectItem value="WHATSAPP META">WHATSAPP META</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="tienda">Tienda</Label>
+                      <Select value={newLead.tienda} onValueChange={(value) => setNewLead({...newLead, tienda: value})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tienda" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="EJERCITO">EJERCITO</SelectItem>
+                          <SelectItem value="LEON">LEON</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -542,13 +689,24 @@ function App() {
             </div>
 
             {/* Filtros */}
-            <div className="flex gap-4 items-center">
+            <div className="flex gap-4 items-center flex-wrap">
               <Input
                 placeholder="Buscar leads..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="max-w-sm"
               />
+              <Select value={filterEstado} onValueChange={setFilterEstado}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Filtrar por estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="Activo">Activos</SelectItem>
+                  <SelectItem value="Inactivo">Inactivos</SelectItem>
+                  <SelectItem value="Vendido">Vendidos</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={filterVendedor} onValueChange={setFilterVendedor}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Filtrar por vendedor" />
@@ -567,96 +725,140 @@ function App() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas las fuentes</SelectItem>
-                  <SelectItem value="TikTok">TikTok</SelectItem>
-                  <SelectItem value="Bot">Bot</SelectItem>
+                  <SelectItem value="Facebook">Facebook</SelectItem>
+                  <SelectItem value="TIKTOK">TIKTOK</SelectItem>
+                  <SelectItem value="Tienda">Tienda</SelectItem>
                   <SelectItem value="Referido">Referido</SelectItem>
-                  <SelectItem value="Tienda Leon">Tienda Leon</SelectItem>
-                  <SelectItem value="Tienda Ejercito">Tienda Ejercito</SelectItem>
+                  <SelectItem value="BOT">BOT</SelectItem>
+                  <SelectItem value="WHATSAPP META">WHATSAPP META</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {/* Kanban Board */}
-            <DragDropContext onDragEnd={onDragEnd}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {PIPELINE_STAGES.map((stage) => (
-                  <div key={stage.id} className="space-y-4">
-                    <div className={`p-4 rounded-lg border-2 ${stage.color}`}>
-                      <h3 className={`font-semibold ${stage.textColor}`}>
-                        {stage.title}
-                      </h3>
-                      <div className="flex justify-between items-center mt-2">
-                        <span className={`text-sm ${stage.textColor}`}>
-                          {leadsByStage[stage.id]?.length || 0} leads
-                        </span>
-                        <span className={`text-sm font-bold ${stage.textColor}`}>
-                          S/ {(leadsByStage[stage.id]?.reduce((sum, lead) => sum + lead.valor_estimado, 0) || 0).toLocaleString()}
-                        </span>
-                      </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {PIPELINE_STAGES.map((stage) => (
+                <div key={stage.id} className="space-y-4">
+                  <div className={`p-4 rounded-lg border-2 ${stage.color}`}>
+                    <h3 className={`font-semibold ${stage.textColor}`}>
+                      {stage.title}
+                    </h3>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className={`text-sm ${stage.textColor}`}>
+                        {leadsByStage[stage.id]?.length || 0} leads
+                      </span>
+                      <span className={`text-sm font-bold ${stage.textColor}`}>
+                        S/ {(leadsByStage[stage.id]?.reduce((sum, lead) => sum + lead.valor_estimado, 0) || 0).toLocaleString()}
+                      </span>
                     </div>
-                    
-                    <Droppable droppableId={stage.id}>
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          className={`min-h-[400px] space-y-3 p-2 rounded-lg transition-colors ${
-                            snapshot.isDraggingOver ? 'bg-gray-100' : 'bg-transparent'
-                          }`}
-                        >
-                          {leadsByStage[stage.id]?.map((lead, index) => (
-                            <Draggable key={lead.id} draggableId={lead.id} index={index}>
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  className={`bg-white p-4 rounded-lg shadow-sm border cursor-move transition-shadow ${
-                                    snapshot.isDragging ? 'shadow-lg' : 'hover:shadow-md'
-                                  }`}
-                                >
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-gray-900">{lead.nombre}</h4>
-                                    <div className="flex items-center space-x-2 text-sm text-gray-600">
-                                      <Phone className="h-3 w-3" />
-                                      <span>{lead.telefono}</span>
-                                    </div>
-                                    {lead.email && (
-                                      <div className="flex items-center space-x-2 text-sm text-gray-600">
-                                        <Mail className="h-3 w-3" />
-                                        <span>{lead.email}</span>
-                                      </div>
-                                    )}
-                                    <p className="text-sm text-gray-700">{lead.producto_interes}</p>
-                                    <div className="flex justify-between items-center">
-                                      <Badge variant="outline" className="text-xs">
-                                        {lead.fuente}
-                                      </Badge>
-                                      <span className="font-bold text-green-600">
-                                        S/ {lead.valor_estimado.toLocaleString()}
-                                      </span>
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {lead.vendedor_asignado}
-                                    </div>
-                                    {lead.comentarios && (
-                                      <p className="text-xs text-gray-600 italic">
-                                        {lead.comentarios.substring(0, 50)}...
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                          {provided.placeholder}
-                        </div>
-                      )}
-                    </Droppable>
                   </div>
-                ))}
-              </div>
-            </DragDropContext>
+                  
+                  <div className="min-h-[500px] space-y-3 p-2 rounded-lg bg-gray-50">
+                    {leadsByStage[stage.id]?.map((lead) => (
+                      <div
+                        key={lead.id}
+                        className="bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-shadow"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-semibold text-gray-900">{lead.nombre}</h4>
+                            <div className="flex space-x-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openEditForm(lead)}
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => toggleLeadStatus(lead.id)}
+                              >
+                                {lead.estado_lead === 'Activo' ? (
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                ) : (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            <span>{lead.telefono}</span>
+                          </div>
+                          
+                          {lead.email && (
+                            <div className="flex items-center space-x-2 text-sm text-gray-600">
+                              <Mail className="h-3 w-3" />
+                              <span>{lead.email}</span>
+                            </div>
+                          )}
+                          
+                          <p className="text-sm text-gray-700">{lead.producto_interes}</p>
+                          
+                          <div className="flex justify-between items-center">
+                            <div className="flex space-x-1">
+                              <Badge variant="outline" className="text-xs">
+                                {lead.fuente}
+                              </Badge>
+                              {lead.tienda && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {lead.tienda}
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="font-bold text-green-600">
+                              S/ {lead.valor_estimado.toLocaleString()}
+                            </span>
+                          </div>
+                          
+                          <div className="text-xs text-gray-500">
+                            {lead.vendedor_nombre}
+                          </div>
+                          
+                          <div className="flex items-center space-x-1">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full" 
+                                style={{ width: `${lead.probabilidad}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs text-gray-500">{lead.probabilidad}%</span>
+                          </div>
+                          
+                          {lead.comentarios && (
+                            <p className="text-xs text-gray-600 italic">
+                              {lead.comentarios.substring(0, 50)}...
+                            </p>
+                          )}
+                          
+                          {/* Botones para mover entre etapas */}
+                          <div className="flex gap-1 mt-3 flex-wrap">
+                            {PIPELINE_STAGES.map((targetStage) => {
+                              if (targetStage.title === lead.pipeline_etapa) return null
+                              return (
+                                <Button
+                                  key={targetStage.id}
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs"
+                                  onClick={() => moveLeadToStage(lead.id, targetStage.title)}
+                                >
+                                  <ArrowRight className="h-3 w-3 mr-1" />
+                                  {targetStage.title}
+                                </Button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </TabsContent>
 
           {/* Dashboard Tab */}
@@ -759,21 +961,70 @@ function App() {
             </div>
           </TabsContent>
 
-          {/* Otras tabs simplificadas por espacio */}
+          {/* Gestión Leads Tab */}
           <TabsContent value="leads">
             <Card>
               <CardHeader>
-                <CardTitle>Gestión de Leads</CardTitle>
-                <CardDescription>Vista detallada de todos los leads</CardDescription>
+                <CardTitle>Gestión Completa de Leads</CardTitle>
+                <CardDescription>
+                  Vista detallada de todos los leads con opciones de edición
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-center text-gray-500 py-8">
-                  Use el Pipeline Kanban para gestión visual de leads
-                </p>
+                <div className="space-y-4">
+                  {filteredLeads.slice(0, 20).map((lead) => (
+                    <div key={lead.id} className="flex justify-between items-center p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-4">
+                          <div>
+                            <div className="font-semibold">{lead.nombre}</div>
+                            <div className="text-sm text-gray-600">{lead.telefono}</div>
+                            {lead.email && <div className="text-sm text-gray-500">{lead.email}</div>}
+                          </div>
+                          <div>
+                            <Badge variant="outline">{lead.fuente}</Badge>
+                            {lead.tienda && <Badge variant="secondary" className="ml-1">{lead.tienda}</Badge>}
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600">{lead.pipeline_etapa}</div>
+                            <div className="text-sm text-gray-500">{lead.vendedor_nombre}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <div className="font-bold text-green-600">
+                            S/ {lead.valor_estimado.toLocaleString()}
+                          </div>
+                          <Badge variant={lead.estado_lead === 'Activo' ? 'default' : 'secondary'}>
+                            {lead.estado_lead}
+                          </Badge>
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button size="sm" variant="outline" onClick={() => openEditForm(lead)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => toggleLeadStatus(lead.id)}
+                          >
+                            {lead.estado_lead === 'Activo' ? (
+                              <XCircle className="h-4 w-4 text-red-500" />
+                            ) : (
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
+          {/* Ventas Tab */}
           <TabsContent value="ventas">
             <Card>
               <CardHeader>
@@ -793,14 +1044,25 @@ function App() {
                           <div className="font-semibold">{venta.cliente_nombre}</div>
                           <div className="text-sm text-gray-600">{venta.producto_vendido}</div>
                           <div className="text-sm text-gray-500">{venta.fecha_venta}</div>
+                          <div className="text-sm text-gray-500">Vendedor: {venta.vendedor}</div>
                         </div>
                         <div className="text-right">
                           <div className="font-bold text-green-600">
                             S/ {venta.monto_total.toLocaleString()}
                           </div>
-                          <Badge variant={venta.tipo_pago === 'Completo' ? 'default' : 'secondary'}>
-                            {venta.tipo_pago}
-                          </Badge>
+                          <div className="flex space-x-2 mt-1">
+                            <Badge variant={venta.tipo_pago === 'Completo' ? 'default' : 'secondary'}>
+                              {venta.tipo_pago}
+                            </Badge>
+                            <Badge variant={venta.con_comprobante === 'Sí' ? 'default' : 'destructive'}>
+                              {venta.con_comprobante === 'Sí' ? 'Con comprobante' : 'Sin comprobante'}
+                            </Badge>
+                          </div>
+                          {venta.saldo_pendiente > 0 && (
+                            <div className="text-sm text-red-600 mt-1">
+                              Pendiente: S/ {venta.saldo_pendiente.toLocaleString()}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))
@@ -810,6 +1072,7 @@ function App() {
             </Card>
           </TabsContent>
 
+          {/* Cobranzas Tab */}
           <TabsContent value="cobranzas">
             <Card>
               <CardHeader>
@@ -832,6 +1095,11 @@ function App() {
                             {cobranza.dias_vencido} días vencido
                           </Badge>
                         )}
+                        {cobranza.notas_cobranza && (
+                          <div className="text-sm text-gray-500 mt-1">
+                            {cobranza.notas_cobranza}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <div className="font-bold text-red-600">
@@ -840,6 +1108,9 @@ function App() {
                         <div className="text-sm text-gray-500">
                           de S/ {cobranza.monto_original.toLocaleString()}
                         </div>
+                        <Badge variant={cobranza.estado_cobranza === 'Al día' ? 'default' : 'destructive'} className="mt-1">
+                          {cobranza.estado_cobranza}
+                        </Badge>
                       </div>
                     </div>
                   ))}
@@ -848,6 +1119,7 @@ function App() {
             </Card>
           </TabsContent>
 
+          {/* Reportes Tab */}
           <TabsContent value="reportes">
             <Card>
               <CardHeader>
@@ -855,14 +1127,182 @@ function App() {
                 <CardDescription>Métricas avanzadas del negocio</CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-center text-gray-500 py-8">
-                  Reportes avanzados en desarrollo. Próximamente análisis de conversión, performance por vendedor y más.
-                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <h4 className="font-semibold">Conversión por Fuente</h4>
+                    {['Facebook', 'TIKTOK', 'Tienda', 'Referido', 'BOT', 'WHATSAPP META'].map(fuente => {
+                      const totalFuente = leads.filter(l => l.fuente === fuente).length
+                      const vendidosFuente = leads.filter(l => l.fuente === fuente && l.estado_lead === 'Vendido').length
+                      const conversion = totalFuente > 0 ? ((vendidosFuente / totalFuente) * 100).toFixed(1) : 0
+                      return (
+                        <div key={fuente} className="flex justify-between text-sm">
+                          <span>{fuente}</span>
+                          <span>{conversion}% ({vendidosFuente}/{totalFuente})</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h4 className="font-semibold">Performance por Vendedor</h4>
+                    {['Gema Rodriguez', 'Josue Martinez', 'Kevin Lopez', 'Andre Silva'].map(vendedor => {
+                      const totalVendedor = leads.filter(l => l.vendedor_nombre === vendedor).length
+                      const vendidosVendedor = leads.filter(l => l.vendedor_nombre === vendedor && l.estado_lead === 'Vendido').length
+                      const valorVendedor = leads.filter(l => l.vendedor_nombre === vendedor && l.estado_lead === 'Vendido')
+                        .reduce((sum, lead) => sum + lead.valor_estimado, 0)
+                      return (
+                        <div key={vendedor} className="text-sm">
+                          <div className="flex justify-between">
+                            <span>{vendedor}</span>
+                            <span>{vendidosVendedor}/{totalVendedor}</span>
+                          </div>
+                          <div className="text-green-600 font-semibold">
+                            S/ {valorVendedor.toLocaleString()}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h4 className="font-semibold">Resumen Mensual</h4>
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span>Leads nuevos:</span>
+                        <span>{leadsNuevos}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Ventas cerradas:</span>
+                        <span>{ventasDelMes}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Valor vendido:</span>
+                        <span className="text-green-600 font-semibold">
+                          S/ {ventas.filter(v => {
+                            const fechaVenta = new Date(v.fecha_venta)
+                            const hoy = new Date()
+                            return fechaVenta.getMonth() === hoy.getMonth() && fechaVenta.getFullYear() === hoy.getFullYear()
+                          }).reduce((sum, v) => sum + v.monto_total, 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Por cobrar:</span>
+                        <span className="text-red-600 font-semibold">
+                          S/ {cobranzasPendientes.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Formulario de Edición de Lead */}
+      <Dialog open={showEditLeadForm} onOpenChange={setShowEditLeadForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Lead</DialogTitle>
+            <DialogDescription>
+              Actualizar información del lead
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit_nombre">Nombre *</Label>
+              <Input
+                id="edit_nombre"
+                value={editLead.nombre}
+                onChange={(e) => setEditLead({...editLead, nombre: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_telefono">Teléfono *</Label>
+              <Input
+                id="edit_telefono"
+                value={editLead.telefono}
+                onChange={(e) => setEditLead({...editLead, telefono: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_email">Email</Label>
+              <Input
+                id="edit_email"
+                type="email"
+                value={editLead.email}
+                onChange={(e) => setEditLead({...editLead, email: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_pipeline">Etapa del Pipeline</Label>
+              <Select value={editLead.pipeline_etapa} onValueChange={(value) => setEditLead({...editLead, pipeline_etapa: value})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Prospección">Prospección</SelectItem>
+                  <SelectItem value="Contacto">Contacto</SelectItem>
+                  <SelectItem value="Negociación">Negociación</SelectItem>
+                  <SelectItem value="Cierre">Cierre</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="edit_producto">Producto de Interés</Label>
+              <Input
+                id="edit_producto"
+                value={editLead.producto_interes}
+                onChange={(e) => setEditLead({...editLead, producto_interes: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_valor">Valor Estimado (S/)</Label>
+              <Input
+                id="edit_valor"
+                type="number"
+                value={editLead.valor_estimado}
+                onChange={(e) => setEditLead({...editLead, valor_estimado: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_comentarios">Comentarios</Label>
+              <Textarea
+                id="edit_comentarios"
+                value={editLead.comentarios}
+                onChange={(e) => setEditLead({...editLead, comentarios: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_proxima_accion">Próxima Acción</Label>
+              <Input
+                id="edit_proxima_accion"
+                value={editLead.proxima_accion}
+                onChange={(e) => setEditLead({...editLead, proxima_accion: e.target.value})}
+                placeholder="Llamar, enviar cotización, etc."
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_fecha_proxima">Fecha Próxima Acción</Label>
+              <Input
+                id="edit_fecha_proxima"
+                type="date"
+                value={editLead.fecha_proxima_accion}
+                onChange={(e) => setEditLead({...editLead, fecha_proxima_accion: e.target.value})}
+              />
+            </div>
+            <div className="flex space-x-2">
+              <Button onClick={handleEditLead} className="flex-1">
+                Actualizar Lead
+              </Button>
+              <Button variant="outline" onClick={() => setShowEditLeadForm(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Formulario de Venta Modal */}
       <Dialog open={showVentaForm} onOpenChange={setShowVentaForm}>
@@ -975,11 +1415,12 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
             <div className="text-sm text-muted-foreground">
-              © 2025 PETULAP CRM - Sistema Avanzado de Gestión
+              © 2025 PETULAP CRM - Sistema Profesional de Gestión
             </div>
             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
               <span>Pipeline: {totalLeads} leads activos</span>
               <span>Valor: S/ {valorPipeline.toLocaleString()}</span>
+              <span>Cobranzas: S/ {cobranzasPendientes.toLocaleString()}</span>
             </div>
           </div>
         </div>
