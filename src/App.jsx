@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Input } from '@/components/ui/input.jsx'
-import { Label } from '@/components/ui/label.jsx'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
-import { Badge } from '@/components/ui/badge.jsx'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
-import { Textarea } from '@/components/ui/textarea.jsx'
-import { Checkbox } from '@/components/ui/checkbox.jsx'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { 
   Users, TrendingUp, DollarSign, MessageSquare, Database, Settings, 
   Plus, Search, Filter, Download, Upload, RefreshCw, Phone, Mail,
@@ -106,7 +106,7 @@ function App() {
 
       // Cargar leads desde LEADS_MASTER
       const leadsResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/LEADS_MASTER!A2:Q1000?key=${GOOGLE_SHEETS_API_KEY}`
+        `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/LEADS_MASTER!A2:T1000?key=${GOOGLE_SHEETS_API_KEY}`
       )
       
       if (!leadsResponse.ok) {
