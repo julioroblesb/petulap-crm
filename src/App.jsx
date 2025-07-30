@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -13,7 +14,7 @@ import {
   Users, TrendingUp, DollarSign, MessageSquare, Database, Settings, 
   Plus, Search, Filter, Download, Upload, RefreshCw, Phone, Mail,
   Calendar, Clock, AlertTriangle, CheckCircle, XCircle, Target,
-  BarChart3, PieChart, TrendingDown, CreditCard, Receipt, ArrowRight
+  BarChart3, PieChart, TrendingDown, CreditCard, Receipt
 } from 'lucide-react'
 import './App.css'
 
@@ -196,8 +197,17 @@ function App() {
     }
   }, [])
 
-  // Función para mover leads en el pipeline (sin drag & drop)
-  const moveLeadToStage = (leadId, newStage) => {
+  // Función para mover leads en el Kanban
+  const onDragEnd = (result) => {
+    if (!result.destination) return
+
+    const { source, destination, draggableId } = result
+    
+    if (source.droppableId === destination.droppableId) return
+
+    const newStage = destination.droppableId
+    const leadId = draggableId
+
     // Actualizar estado local
     setLeads(prevLeads => 
       prevLeads.map(lead => 
@@ -208,7 +218,7 @@ function App() {
     )
 
     // Si se mueve a "Cierre", abrir formulario de venta
-    if (newStage === 'Cierre') {
+    if (newStage === 'cierre') {
       const lead = leads.find(l => l.id === leadId)
       if (lead) {
         setSelectedLead(lead)
@@ -216,6 +226,7 @@ function App() {
       }
     }
 
+    // Aquí iría la actualización a Google Sheets
     console.log(`Lead ${leadId} movido a ${newStage}`)
   }
 
@@ -326,12 +337,11 @@ function App() {
   // Función auxiliar para asignar vendedor por fuente
   const getVendedorByFuente = (fuente) => {
     const asignaciones = {
-      'Facebook': 'Gema Rodriguez',
-      'TIKTOK': 'Josue Martinez', 
-      'Tienda': 'Kevin Lopez',
-      'Referido': 'Andre Silva',
-      'BOT': 'Gema Rodriguez',
-      'WHATSAPP META': 'Josue Martinez'
+      'TikTok': 'Gema Rodriguez',
+      'Bot': 'Josue Martinez',
+      'Referido': 'Kevin Lopez',
+      'Tienda Leon': 'Andre Silva',
+      'Tienda Ejercito': 'Gema Rodriguez'
     }
     return asignaciones[fuente] || 'Sin asignar'
   }
@@ -482,12 +492,11 @@ function App() {
                           <SelectValue placeholder="Seleccionar fuente" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Facebook">Facebook</SelectItem>
-                          <SelectItem value="TIKTOK">TIKTOK</SelectItem>
-                          <SelectItem value="Tienda">Tienda</SelectItem>
+                          <SelectItem value="TikTok">TikTok</SelectItem>
+                          <SelectItem value="Bot">Bot</SelectItem>
                           <SelectItem value="Referido">Referido</SelectItem>
-                          <SelectItem value="BOT">BOT</SelectItem>
-                          <SelectItem value="WHATSAPP META">WHATSAPP META</SelectItem>
+                          <SelectItem value="Tienda Leon">Tienda Leon</SelectItem>
+                          <SelectItem value="Tienda Ejercito">Tienda Ejercito</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -558,95 +567,96 @@ function App() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas las fuentes</SelectItem>
-                  <SelectItem value="Facebook">Facebook</SelectItem>
-                  <SelectItem value="TIKTOK">TIKTOK</SelectItem>
-                  <SelectItem value="Tienda">Tienda</SelectItem>
+                  <SelectItem value="TikTok">TikTok</SelectItem>
+                  <SelectItem value="Bot">Bot</SelectItem>
                   <SelectItem value="Referido">Referido</SelectItem>
-                  <SelectItem value="BOT">BOT</SelectItem>
-                  <SelectItem value="WHATSAPP META">WHATSAPP META</SelectItem>
+                  <SelectItem value="Tienda Leon">Tienda Leon</SelectItem>
+                  <SelectItem value="Tienda Ejercito">Tienda Ejercito</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Kanban Board (Sin Drag & Drop) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {PIPELINE_STAGES.map((stage) => (
-                <div key={stage.id} className="space-y-4">
-                  <div className={`p-4 rounded-lg border-2 ${stage.color}`}>
-                    <h3 className={`font-semibold ${stage.textColor}`}>
-                      {stage.title}
-                    </h3>
-                    <div className="flex justify-between items-center mt-2">
-                      <span className={`text-sm ${stage.textColor}`}>
-                        {leadsByStage[stage.id]?.length || 0} leads
-                      </span>
-                      <span className={`text-sm font-bold ${stage.textColor}`}>
-                        S/ {(leadsByStage[stage.id]?.reduce((sum, lead) => sum + lead.valor_estimado, 0) || 0).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="min-h-[400px] space-y-3 p-2 rounded-lg bg-gray-50">
-                    {leadsByStage[stage.id]?.map((lead) => (
-                      <div
-                        key={lead.id}
-                        className="bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-shadow"
-                      >
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-gray-900">{lead.nombre}</h4>
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Phone className="h-3 w-3" />
-                            <span>{lead.telefono}</span>
-                          </div>
-                          {lead.email && (
-                            <div className="flex items-center space-x-2 text-sm text-gray-600">
-                              <Mail className="h-3 w-3" />
-                              <span>{lead.email}</span>
-                            </div>
-                          )}
-                          <p className="text-sm text-gray-700">{lead.producto_interes}</p>
-                          <div className="flex justify-between items-center">
-                            <Badge variant="outline" className="text-xs">
-                              {lead.fuente}
-                            </Badge>
-                            <span className="font-bold text-green-600">
-                              S/ {lead.valor_estimado.toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {lead.vendedor_asignado}
-                          </div>
-                          {lead.comentarios && (
-                            <p className="text-xs text-gray-600 italic">
-                              {lead.comentarios.substring(0, 50)}...
-                            </p>
-                          )}
-                          
-                          {/* Botones para mover entre etapas */}
-                          <div className="flex gap-1 mt-3">
-                            {PIPELINE_STAGES.map((targetStage) => {
-                              if (targetStage.title === lead.pipeline_etapa) return null
-                              return (
-                                <Button
-                                  key={targetStage.id}
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-xs"
-                                  onClick={() => moveLeadToStage(lead.id, targetStage.title)}
-                                >
-                                  <ArrowRight className="h-3 w-3 mr-1" />
-                                  {targetStage.title}
-                                </Button>
-                              )
-                            })}
-                          </div>
-                        </div>
+            {/* Kanban Board */}
+            <DragDropContext onDragEnd={onDragEnd}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {PIPELINE_STAGES.map((stage) => (
+                  <div key={stage.id} className="space-y-4">
+                    <div className={`p-4 rounded-lg border-2 ${stage.color}`}>
+                      <h3 className={`font-semibold ${stage.textColor}`}>
+                        {stage.title}
+                      </h3>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className={`text-sm ${stage.textColor}`}>
+                          {leadsByStage[stage.id]?.length || 0} leads
+                        </span>
+                        <span className={`text-sm font-bold ${stage.textColor}`}>
+                          S/ {(leadsByStage[stage.id]?.reduce((sum, lead) => sum + lead.valor_estimado, 0) || 0).toLocaleString()}
+                        </span>
                       </div>
-                    ))}
+                    </div>
+                    
+                    <Droppable droppableId={stage.id}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          className={`min-h-[400px] space-y-3 p-2 rounded-lg transition-colors ${
+                            snapshot.isDraggingOver ? 'bg-gray-100' : 'bg-transparent'
+                          }`}
+                        >
+                          {leadsByStage[stage.id]?.map((lead, index) => (
+                            <Draggable key={lead.id} draggableId={lead.id} index={index}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={`bg-white p-4 rounded-lg shadow-sm border cursor-move transition-shadow ${
+                                    snapshot.isDragging ? 'shadow-lg' : 'hover:shadow-md'
+                                  }`}
+                                >
+                                  <div className="space-y-2">
+                                    <h4 className="font-semibold text-gray-900">{lead.nombre}</h4>
+                                    <div className="flex items-center space-x-2 text-sm text-gray-600">
+                                      <Phone className="h-3 w-3" />
+                                      <span>{lead.telefono}</span>
+                                    </div>
+                                    {lead.email && (
+                                      <div className="flex items-center space-x-2 text-sm text-gray-600">
+                                        <Mail className="h-3 w-3" />
+                                        <span>{lead.email}</span>
+                                      </div>
+                                    )}
+                                    <p className="text-sm text-gray-700">{lead.producto_interes}</p>
+                                    <div className="flex justify-between items-center">
+                                      <Badge variant="outline" className="text-xs">
+                                        {lead.fuente}
+                                      </Badge>
+                                      <span className="font-bold text-green-600">
+                                        S/ {lead.valor_estimado.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {lead.vendedor_asignado}
+                                    </div>
+                                    {lead.comentarios && (
+                                      <p className="text-xs text-gray-600 italic">
+                                        {lead.comentarios.substring(0, 50)}...
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </DragDropContext>
           </TabsContent>
 
           {/* Dashboard Tab */}
@@ -749,7 +759,7 @@ function App() {
             </div>
           </TabsContent>
 
-          {/* Otras tabs simplificadas */}
+          {/* Otras tabs simplificadas por espacio */}
           <TabsContent value="leads">
             <Card>
               <CardHeader>
